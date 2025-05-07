@@ -20,6 +20,7 @@ import {
   getServerUrlHash,
   MCP_REMOTE_VERSION,
   TransportStrategy,
+  sendLog,
 } from './lib/utils'
 import { NodeOAuthClientProvider } from './lib/node-oauth-client-provider'
 import { createLazyAuthCoordinator } from './lib/coordination'
@@ -75,6 +76,14 @@ async function runProxy(
       skipBrowserAuth: authState.skipBrowserAuth,
     }
   }
+
+  sendLog(localTransport, {
+    level: 'debug',
+    logger: 'mcp-remote',
+    data: {
+      message: 'Connecting to remote server...',
+    },
+  })
 
   try {
     // Connect to remote server with lazy authentication

@@ -3,6 +3,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
+import type { MCPLogMessageParams } from './types'
 
 // Connection constants
 export const REASON_AUTH_NEEDED = 'authentication-needed'
@@ -486,4 +487,20 @@ export function setupSignalHandlers(cleanup: () => Promise<void>) {
  */
 export function getServerUrlHash(serverUrl: string): string {
   return crypto.createHash('md5').update(serverUrl).digest('hex')
+}
+
+/**
+ * Helper function to send log messages through stdio MCP transport, for proxy logging purposes
+ * @param transport The transport to send the message through
+ * @param params Message parameters including level, logger name, and data
+ *
+ * In accordance with the official MCP specification
+ * @see https://modelcontextprotocol.io/specification/2025-03-26/server/utilities/logging#log-message-notifications
+ */
+export function sendLog(transport: Transport, params: MCPLogMessageParams) {
+  return transport.send({
+    jsonrpc: '2.0',
+    method: 'notifications/message',
+    params: { ...params },
+  })
 }

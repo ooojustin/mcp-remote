@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events'
+import { LoggingLevel } from '@modelcontextprotocol/sdk/types.js'
 
 /**
  * Options for creating an OAuth client provider
@@ -32,4 +33,13 @@ export interface OAuthCallbackServerOptions {
   path: string
   /** Event emitter to signal when auth code is received */
   events: EventEmitter
+}
+
+/*
+ * Message sending helper type
+ */
+export interface MCPLogMessageParams {
+  level: LoggingLevel
+  logger: string
+  data: Record<string, any>
 }
