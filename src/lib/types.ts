@@ -1,5 +1,4 @@
 import { EventEmitter } from 'events'
-import { LoggingLevel } from '@modelcontextprotocol/sdk/types.js'
 
 /**
  * Options for creating an OAuth client provider
@@ -36,10 +35,6 @@ export interface OAuthCallbackServerOptions {
 }
 
 /*
- * Message sending helper type
+ * Connection status types used for logging (via local transport, in proxy mode)
  */
-export interface MCPLogMessageParams {
-  level: LoggingLevel
-  logger: string
-  data: Record<string, any>
-}
+export type ConnStatus = 'connected' | 'connecting' | 'reconnecting' | 'authenticating' | 'error' | 'error_final'
