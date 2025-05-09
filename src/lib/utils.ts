@@ -11,6 +11,17 @@ import { ConnStatus } from './types'
 export const REASON_AUTH_NEEDED = 'authentication-needed'
 export const REASON_TRANSPORT_FALLBACK = 'falling-back-to-alternate-transport'
 
+/*
+ * Reconnect constants (for exponential backoff)
+ * NOTE:
+ * - These are not configurable via CLI args, but can be in the future.
+ * - The MCP spec does not include the concept of a heartbeat or ping/pong, so this is a workaround.
+ */
+//
+const MAX_RECONNECT_ATTEMPTS = 10
+const INITIAL_BACKOFF_MS = 1000
+const MAX_BACKOFF_MS = 30000
+
 // Transport strategy types
 export type TransportStrategy = 'sse-only' | 'http-only' | 'sse-first' | 'http-first'
 import { OAuthCallbackServerOptions } from './types'
@@ -31,19 +42,86 @@ export function log(str: string, ...rest: unknown[]) {
  * Creates a bidirectional proxy between two transports
  * @param params The transport connections to proxy between
  */
-export function mcpProxy({ transportToClient, transportToServer }: { transportToClient: Transport; transportToServer: Transport }) {
+export function mcpProxy({
+  transportToClient,
+  transportToServer,
+  serverUrl,
+  authProvider,
+  headers,
+  authInitializer,
+  transportStrategy,
+}: {
+  transportToClient: Transport & { sendMessage?: (level: LoggingLevel, data: any, logger?: string) => Promise<void> }
+  transportToServer: Transport
+  serverUrl: string
+  authProvider: OAuthClientProvider
+  headers: Record<string, string>
+  authInitializer: AuthInitializer
+  transportStrategy: TransportStrategy
+}) {
   let transportToClientClosed = false
   let transportToServerClosed = false
+  let reconnectAttempts = 0
+
+  const _log = (level: LoggingLevel, message: any, status: ConnStatus = 'connected') => {
+    if (transportToClient.sendMessage) {
+      transportToClient.sendMessage(level, {
+        status,
+        message,
+      })
+    }
+    log(message)
+  }
+
+  const getBackoffTime = () => {
+    const backoff = INITIAL_BACKOFF_MS * Math.pow(2, reconnectAttempts)
+    return Math.min(backoff, MAX_BACKOFF_MS)
+  }
+
+  async function reconnect() {
+    if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      _log('error', `Maximum reconnection attempts (${MAX_RECONNECT_ATTEMPTS}) reached. Giving up.`, 'error_final')
+      return
+    }
+
+    const backoffTime = getBackoffTime()
+    _log(
+      'info',
+      `SSE connection timed out. Attempting reconnection in ${backoffTime}ms (attempt ${reconnectAttempts + 1}/${MAX_RECONNECT_ATTEMPTS})`,
+      'reconnecting',
+    )
+
+    await new Promise((resolve) => setTimeout(resolve, backoffTime))
+
+    try {
+      _log('info', 'Creating new transport connection...', 'connecting')
+      const newTransport = await connectToRemoteServer(
+        null,
+        serverUrl,
+        authProvider,
+        headers,
+        authInitializer,
+        transportStrategy,
+        transportToClient as StdioServerTransportExt,
+      )
+
+      reconnectAttempts = 0
+      Object.assign(transportToServer, newTransport)
+      _log('info', 'Reconnection successful', 'connected')
+    } catch (error) {
+      reconnectAttempts++
+      _log('error', `Reconnection failed: ${error}`, 'error')
+      reconnect()
+    }
+  }
 
   transportToClient.onmessage = (message) => {
-    // @ts-expect-error TODO
-    log('[Local→Remote]', message.method || message.id)
+    _log('info', '[Local→Remote]')
     transportToServer.send(message).catch(onServerError)
   }
 
   transportToServer.onmessage = (message) => {
-    // @ts-expect-error TODO: fix this type
-    log('[Remote→Local]', message.method || message.id)
+    _log('info', '[Remote→Local]')
     transportToClient.send(message).catch(onClientError)
   }
 
@@ -51,7 +129,6 @@ export function mcpProxy({ transportToClient, transportToServer }: { transportTo
     if (transportToServerClosed) {
       return
     }
-
     transportToClientClosed = true
     transportToServer.close().catch(onServerError)
   }
@@ -68,11 +145,16 @@ export function mcpProxy({ transportToClient, transportToServer }: { transportTo
   transportToServer.onerror = onServerError
 
   function onClientError(error: Error) {
-    log('Error from local client:', error)
+    _log('error', `Error from local client: ${error}`, 'error')
   }
 
   function onServerError(error: Error) {
-    log('Error from remote server:', error)
+    _log('error', `Error from remote server: ${error}`, 'error')
+
+    // Only attempt reconnection for SSE timeout errors
+    if (error.message?.includes('terminated: Body Timeout Error')) {
+      reconnect()
+    }
   }
 }
 

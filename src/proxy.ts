@@ -79,19 +79,24 @@ async function runProxy(
   try {
     // Connect to remote server with lazy authentication
     const remoteTransport = await connectToRemoteServer(
-      null,
+      null, 
       serverUrl,
-      authProvider,
+      authProvider, 
       headers,
       authInitializer,
       transportStrategy,
-      localTransport,
+      localTransport
     )
 
     // Set up bidirectional proxy between local and remote transports
     mcpProxy({
       transportToClient: localTransport,
       transportToServer: remoteTransport,
+      serverUrl,
+      authProvider,
+      headers,
+      authInitializer,
+      transportStrategy,
     })
 
     // Start the local STDIO server
