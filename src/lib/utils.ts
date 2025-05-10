@@ -5,11 +5,12 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { LoggingLevel } from '@modelcontextprotocol/sdk/types.js'
-import { ConnStatus } from './types'
+import { ConnStatus, PingConfig } from './types'
 
 // Connection constants
 export const REASON_AUTH_NEEDED = 'authentication-needed'
 export const REASON_TRANSPORT_FALLBACK = 'falling-back-to-alternate-transport'
+export const PING_INTERVAL_DEFAULT = 30000
 
 // Transport strategy types
 export type TransportStrategy = 'sse-only' | 'http-only' | 'sse-first' | 'http-first'
@@ -106,6 +107,44 @@ export type AuthInitializer = () => Promise<{
   waitForAuthCode: () => Promise<string>
   skipBrowserAuth: boolean
 }>
+
+/**
+ * Sets up periodic ping to keep the connection alive
+ * @param transport The transport to ping
+ * @param config Ping configuration
+ * @returns A cleanup function to stop pinging
+ */
+export function setupPing(transport: Transport, config: PingConfig): () => void {
+  if (!config.enabled) {
+    return () => {}
+  }
+
+  let pingTimeout: NodeJS.Timeout | null = null
+  let lastPingId = 0
+
+  const interval = config.interval * 1000 // convert ms to s
+  const pingInterval = setInterval(async () => {
+    const pingId = ++lastPingId
+    try {
+      // Docs: https://modelcontextprotocol.io/specification/2025-03-26/basic/utilities/ping
+      await transport.send({
+        jsonrpc: '2.0',
+        id: `ping-${pingId}`,
+        method: 'ping',
+      })
+      log(`Ping ${pingId} successful`)
+    } catch (error) {
+      log(`Ping ${pingId} failed:`, error)
+    }
+  }, interval)
+
+  return () => {
+    if (pingTimeout) {
+      clearTimeout(pingTimeout)
+    }
+    clearInterval(pingInterval)
+  }
+}
 
 /**
  * Creates and connects to a remote server with OAuth authentication
@@ -450,6 +489,21 @@ export async function parseCommandLineArgs(args: string[], defaultPort: number, 
     i++
   }
 
+  // Parse ping configuration
+  const autoPing = args.includes('--auto-ping')
+  const pingIntervalIndex = args.indexOf('--ping-interval')
+  let pingInterval = PING_INTERVAL_DEFAULT
+  if (pingIntervalIndex !== -1 && pingIntervalIndex < args.length - 1) {
+    const intervalStr = args[pingIntervalIndex + 1]
+    const interval = parseInt(intervalStr)
+    if (!isNaN(interval) && interval > 0) {
+      pingInterval = interval
+      log(`Using ping interval: ${pingInterval} seconds`)
+    } else {
+      log(`Warning: Invalid ping interval "${args[pingIntervalIndex + 1]}". Using default: ${PING_INTERVAL_DEFAULT} seconds`)
+    }
+  }
+
   const serverUrl = args[0]
   const specifiedPort = args[1] ? parseInt(args[1]) : undefined
   const allowHttp = args.includes('--allow-http')
@@ -509,7 +563,16 @@ export async function parseCommandLineArgs(args: string[], defaultPort: number, 
     })
   }
 
-  return { serverUrl, callbackPort, headers, transportStrategy }
+  return {
+    serverUrl,
+    callbackPort,
+    headers,
+    transportStrategy,
+    pingConfig: {
+      enabled: autoPing,
+      interval: pingInterval,
+    },
+  }
 }
 
 /**

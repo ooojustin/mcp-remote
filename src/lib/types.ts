@@ -38,3 +38,11 @@ export interface OAuthCallbackServerOptions {
  * Connection status types used for logging (via local transport, in proxy mode)
  */
 export type ConnStatus = 'connected' | 'connecting' | 'reconnecting' | 'authenticating' | 'error' | 'error_final'
+
+/*
+ * Configuration for the ping mechanism
+ */
+export interface PingConfig {
+  enabled: boolean
+  interval: number
+}
