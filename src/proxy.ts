@@ -102,9 +102,6 @@ async function runProxy(
     // Start the local STDIO server
     await localTransport.start()
     log('Local STDIO server running')
-    if (pingConfig.enabled) {
-      log(`Automatic ping enabled with ${pingConfig.interval} second interval`)
-    }
     log(`Proxy established successfully between local STDIO and remote ${remoteTransport.constructor.name}`)
     log('Press Ctrl+C to exit')
 

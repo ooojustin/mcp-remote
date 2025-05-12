@@ -10,7 +10,7 @@ import { ConnStatus, PingConfig } from './types'
 // Connection constants
 export const REASON_AUTH_NEEDED = 'authentication-needed'
 export const REASON_TRANSPORT_FALLBACK = 'falling-back-to-alternate-transport'
-export const PING_INTERVAL_DEFAULT = 30000
+export const PING_INTERVAL_DEFAULT = 30 // seconds
 
 // Transport strategy types
 export type TransportStrategy = 'sse-only' | 'http-only' | 'sse-first' | 'http-first'
@@ -122,7 +122,7 @@ export function setupPing(transport: Transport, config: PingConfig): () => void 
   let pingTimeout: NodeJS.Timeout | null = null
   let lastPingId = 0
 
-  const interval = config.interval * 1000 // convert ms to s
+  const interval = config.interval * 1000 // convert s to ms
   const pingInterval = setInterval(async () => {
     const pingId = ++lastPingId
     try {
@@ -138,6 +138,7 @@ export function setupPing(transport: Transport, config: PingConfig): () => void 
     }
   }, interval)
 
+  log(`Automatic ping enabled with ${config.interval} second interval`)
   return () => {
     if (pingTimeout) {
       clearTimeout(pingTimeout)
