@@ -36,14 +36,21 @@ export function mcpProxy({ transportToClient, transportToServer }: { transportTo
   let transportToClientClosed = false
   let transportToServerClosed = false
 
-  transportToClient.onmessage = (message) => {
-    // @ts-expect-error TODO
+  transportToClient.onmessage = (_message) => {
+    // TODO: fix types
+    const message = _message as any
     log('[Local→Remote]', message.method || message.id)
+    if (message.method === 'initialize') {
+      const { clientInfo } = message.params
+      if (clientInfo) clientInfo.name = `${clientInfo.name} (via mcp-remote ${MCP_REMOTE_VERSION})`
+      log(JSON.stringify(message, null, 2))
+    }
     transportToServer.send(message).catch(onServerError)
   }
 
-  transportToServer.onmessage = (message) => {
-    // @ts-expect-error TODO: fix this type
+  transportToServer.onmessage = (_message) => {
+    // TODO: fix types
+    const message = _message as any
     log('[Remote→Local]', message.method || message.id)
     transportToClient.send(message).catch(onClientError)
   }
@@ -589,6 +596,11 @@ export function setupSignalHandlers(cleanup: () => Promise<void>) {
 
   // Keep the process alive
   process.stdin.resume()
+  process.stdin.on('end', async () => {
+    log('\nShutting down...')
+    await cleanup()
+    process.exit(0)
+  })
 }
 
 /**
